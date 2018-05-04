@@ -29,19 +29,20 @@ class DQNAgent:
         # Neural Net for Deep-Q learning Model
         model = Sequential()
 
-        model.add(Conv2D(16,kernel_size=(15,15),input_shape=self.state_size))
-        model.add(MaxPooling2D(pool_size=(10,10)))
-        model.add(Conv2D(10,kernel_size=(5,5)))
+        model.add(Conv2D(20,kernel_size=(15,15),input_shape=self.state_size))
+        model.add(MaxPooling2D(pool_size=(5,5)))
+        model.add(Conv2D(20,kernel_size=(15,15)))
         model.add(MaxPooling2D(pool_size=(2,2)))
         model.add(Flatten())
-        model.add(Dense(15, activation='relu'))
-        model.add(Dense(self.action_size, activation='relu'))
+        model.add(Dense(256))
+        model.add(Dense(self.action_size))
         model.compile(loss='mse',
                       optimizer=Adam(lr=self.learning_rate))
         with K.get_session().graph.as_default() as g:
             return model
 
     def remember(self, state, action, reward, next_state, done):
+        # print(state[0],next_state[0])
         self.memory.append((state, action, reward, next_state, done))
         # print("helolu")
 
@@ -49,48 +50,31 @@ class DQNAgent:
         if np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
         with K.get_session().graph.as_default() as g:
-            try:
-                act_values = self.model.predict(state)
-            except Exception as e:
-                print(e)
-                os._exit(1)
-
-
-            print(act_values)
+            act_values = self.model.predict(state)
+            # print(act_values)
             return np.argmax(act_values[0])  # returns action
 
     def replay(self, batch_size):
         minibatch = random.sample(self.memory, batch_size)
         with K.get_session().graph.as_default() as g:
             for state, action, reward, next_state, done in minibatch:
-                if(state is None):
-                    continue
                 target = reward
+
                 if not done:
-                    print(next_state.shape)
-                    try:
-                        target = (reward + self.gamma * np.amax(self.model.predict(next_state)))
-                    except Exception as e:
-                        print("1-{}".format(e))
-                        os._exit(1)
-
-                try:
-
-                    target_f = self.model.predict(state)
-                except Exception as e:
-                    print(state)
-                    print("2-{}".format(e))
-                    os._exit(1)
-                # print("target{}-action-{}".format(target,action))
+                    # print(next_state.shape)
+                    target = (reward + self.gamma * np.amax(self.model.predict(next_state)))
+                target_f = self.model.predict(state)
                 target_f[0][action] = target
-                self.model.fit(state, target_f, epochs=1, verbose=1)
+                # print(target_f)
+                self.model.fit(state, target_f, epochs=1, verbose=0)
 
-        print("model fitted")
+        # print("model fitted")
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
     def load(self, name):
         self.model.load_weights(name)
+        print('model_loaded')
 
     def save(self, name):
         self.model.save_weights(name)
