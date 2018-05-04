@@ -14,7 +14,7 @@ from mss import mss
 from pytesseract import image_to_string
 from datetime import datetime
 import time
-EPISODES=50
+EPISODES=200
 # tools = pyocr.get_available_tools()[0]
 # builder=pyocr.builders.DigitBuilder()
 sct = mss()
@@ -29,12 +29,13 @@ class Start():
 
 start=Start()
 def takeAction(action=0):
-    if(action==1):
+    if(action==0):
         keyboard.press(Key.space)
         keyboard.release(Key.space)
     else:
         None
 agent=D(state_size=state_size,action_size=2)
+# agent.load('model1.hdf5')
 agent.batch_size=10
 def processQueue(thread_name,queue,train_q,start,agent):
     previous=None
@@ -67,11 +68,11 @@ def processQueue(thread_name,queue,train_q,start,agent):
                 done=False
             # print(reward,done)
             start_state=True
-            state=np.array(q['previous_image'].convert("L")).reshape((1,state_size[0],state_size[1],1))
-            next_state=np.array(q['image'].convert("L")).reshape((1,state_size[0],state_size[1],1))
-            reward_k=reward if not done else -100
+            state=np.array(q['previous_image'].filter(ImageFilter.FIND_EDGES).convert("L")).reshape((1,state_size[0],state_size[1],1))
+            next_state=np.array(q['image'].filter(ImageFilter.FIND_EDGES).convert("L")).reshape((1,state_size[0],state_size[1],1))
+            reward_k=reward if not done else -200
             # if(not start_state):
-            agent.remember(state,action,reward_k*10,next_state,done)
+            agent.remember(state,action,reward_k,next_state,done)
             start_state=False
             previous=next_state
             previous_action=action
@@ -80,7 +81,7 @@ def processQueue(thread_name,queue,train_q,start,agent):
 
 
 
-            if(i==100):
+            if(i==500):
                 print("Queue Reached 500")
                 start.start=False
                 i=0
@@ -96,7 +97,7 @@ def processQueue(thread_name,queue,train_q,start,agent):
 def showImage(thread,queue,train_q,start,agent):
     last_time=datetime.now()
     i=0
-    batch_size=50
+    batch_size=32
 
     # graph=K.get_session().graph
     # agent.graph=graph
@@ -117,24 +118,37 @@ def showImage(thread,queue,train_q,start,agent):
         #     keyboard.release(Key.space)
         # frame = cv2.cvtColor(np.array(image_pil), cv2.COLOR_BGR2GRAY)
 
-        if(start.start==True):
-            img=sct.grab(monitor)
 
-            img = Image.frombytes('RGB', (img.width, img.height), img.rgb)
-            image_pil=np.asarray(img.convert('L'))
-            image=image_pil.reshape((1,state_size[0],state_size[1],1))
-            with tf.get_default_graph().as_default():
-                action=agent.act(image)
-            takeAction(action)
-            time.sleep(0.3)
-            next_img=sct.grab(monitor)
-            next_img = Image.frombytes('RGB', (next_img.width, next_img.height), next_img.rgb)
-            image_pil_next=np.asarray(next_img.convert('L'))
+        img=sct.grab(monitor)
+
+        img = Image.frombytes('RGB', (img.width, img.height), img.rgb)
+        image_pil=np.asarray(img.convert('L').filter(ImageFilter.FIND_EDGES))
+        image=image_pil.reshape((1,state_size[0],state_size[1],1))
+        with tf.get_default_graph().as_default():
+            action=agent.act(image)
+        takeAction(action)
+        if(start.start):
+            time.sleep(0.25)
+        next_img=sct.grab(monitor)
+        next_img = Image.frombytes('RGB', (next_img.width, next_img.height), next_img.rgb)
+        image_pil_next=np.asarray(next_img.convert('L').filter(ImageFilter.FIND_EDGES))
+        cv2.imshow("test",image_pil_next )
+        cv2.imshow("test2",image_pil )
+        i+=1
+        # time.sleep(0.1)
+        # delta=datetime.now()-last_time
+        # delta=delta.seconds+ (float(1) / delta.microseconds)
+        # print("Loop Took {} seconds".format(delta))
+        last_time=datetime.now()
+        if cv2.waitKey(24) & 0xFF == ord('q'):
+            break
+        if(start.start==True):
             queue.put({"previous_image":img,"image":next_img,"action":action})
-            cv2.imshow("test",image_pil_next )
         elif(start.start==False):
-            print("Training Episode {}".format(i))
+
             for e in range(EPISODES):
+                takeAction(0)
+                print("Training Episode {}".format(e))
                 if(len(agent.memory)>batch_size):
                     with tf.get_default_graph().as_default():
                         agent.replay(batch_size)
@@ -145,14 +159,7 @@ def showImage(thread,queue,train_q,start,agent):
 
 
 
-        i+=1
-        # time.sleep(0.1)
-        # delta=datetime.now()-last_time
-        # delta=delta.seconds+ (float(1) / delta.microseconds)
-        # print("Loop Took {} seconds".format(delta))
-        last_time=datetime.now()
-        if cv2.waitKey(24) & 0xFF == ord('q'):
-            break
+
 
     cv2.destroyAllWindows()
 worker=Thread(target=processQueue,args=("queue thread",q,train_q,start,agent))
@@ -165,3 +172,4 @@ q.join()
 
 worker.join()
 worker1.join()
+ 
