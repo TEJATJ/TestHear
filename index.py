@@ -14,10 +14,12 @@ from mss import mss
 from pytesseract import image_to_string
 from datetime import datetime
 import time
-EPISODES=200
+EPISODES=50
+model_rand=np.random.randint(0,100)
 # tools = pyocr.get_available_tools()[0]
 # builder=pyocr.builders.DigitBuilder()
 sct = mss()
+training=False
 state_size=(300,450,1)
 monitor={'top': 90, 'left': 0, 'width': state_size[1], 'height': state_size[0]}
 q=Queue(maxsize=0)
@@ -29,13 +31,24 @@ class Start():
 
 start=Start()
 def takeAction(action=0):
-    if(action==0):
+    if(action==2):
+        keyboard.release(Key.down)
         keyboard.press(Key.space)
         keyboard.release(Key.space)
+
+    elif(action==1):
+        keyboard.release(Key.down)
+        keyboard.press(Key.up)
+        keyboard.release(Key.up)
+
+    elif(action==0):
+        keyboard.press(Key.down)
+        #keyboard.release(Key.down)
     else:
+        keyboard.release(Key.down)
         None
-agent=D(state_size=state_size,action_size=2)
-# agent.load('model1.hdf5')
+agent=D(state_size=state_size,action_size=4)
+agent.load('model159.hdf5')
 agent.batch_size=10
 def processQueue(thread_name,queue,train_q,start,agent):
     previous=None
@@ -46,45 +59,46 @@ def processQueue(thread_name,queue,train_q,start,agent):
     done=False
     while(1):
         try:
-            if(start.start):
-                i+=1
+            if(training==True):
+                if(start.start):
+                    i+=1
 
-            q=queue.get()
+                q=queue.get()
 
-            score=image_to_string(q['image'],lang="eng")
-            action=q['action']
-            pattern=re.findall(r"[0-9][0-9][0-9][0-9][0-9]",score)
+                score=image_to_string(q['image'],lang="eng")
+                action=q['action']
+                pattern=re.findall(r"[0-9][0-9][0-9][0-9][0-9]",score)
 
-            reward=0
-            if(len(pattern)==1):
-                reward=int(pattern[0])
-            elif(len(pattern)==2):
-                reward=int(pattern[1])
-            next_state=None
+                reward=0
+                if(len(pattern)==1):
+                    reward=int(pattern[0])
+                elif(len(pattern)==2):
+                    reward=int(pattern[1])
+                next_state=None
 
-            if(reward==previous_reward):
-                done=True
-            else:
-                done=False
-            # print(reward,done)
-            start_state=True
-            state=np.array(q['previous_image'].filter(ImageFilter.FIND_EDGES).convert("L")).reshape((1,state_size[0],state_size[1],1))
-            next_state=np.array(q['image'].filter(ImageFilter.FIND_EDGES).convert("L")).reshape((1,state_size[0],state_size[1],1))
-            reward_k=reward if not done else -200
-            # if(not start_state):
-            agent.remember(state,action,reward_k,next_state,done)
-            start_state=False
-            previous=next_state
-            previous_action=action
-            previous_reward=reward
-            queue.task_done()
+                if(reward==previous_reward):
+                    done=True
+                else:
+                    done=False
+                # print(reward,done)
+                start_state=True
+                state=np.array(q['previous_image'].filter(ImageFilter.FIND_EDGES).convert("L")).reshape((1,state_size[0],state_size[1],1))
+                next_state=np.array(q['image'].filter(ImageFilter.FIND_EDGES).convert("L")).reshape((1,state_size[0],state_size[1],1))
+                reward_k=reward if not done else -200
+                # if(not start_state):
+                agent.remember(state,action,reward_k,next_state,done)
+                start_state=False
+                previous=next_state
+                previous_action=action
+                previous_reward=reward
+                queue.task_done()
 
 
 
-            if(i==500):
-                print("Queue Reached 500")
-                start.start=False
-                i=0
+                if(i==500):
+                    print("Queue Reached 100")
+                    start.start=False
+                    i=0
         except Exception as e:
             print(e)
             os._exit(1)
@@ -142,18 +156,19 @@ def showImage(thread,queue,train_q,start,agent):
         last_time=datetime.now()
         if cv2.waitKey(24) & 0xFF == ord('q'):
             break
-        if(start.start==True):
+        if(start.start==True and training==True):
             queue.put({"previous_image":img,"image":next_img,"action":action})
-        elif(start.start==False):
+            # print("queued")
+        elif(start.start==False and training==True):
 
             for e in range(EPISODES):
-                takeAction(0)
+                takeAction(1)
                 print("Training Episode {}".format(e))
                 if(len(agent.memory)>batch_size):
                     with tf.get_default_graph().as_default():
                         agent.replay(batch_size)
             print("Training Completed...Replaying The Game")
-            agent.save('model1.hdf5')
+            agent.save('model1%s.hdf5'%(model_rand))
             start.start=True
             # time.sleep(3)
 
@@ -172,4 +187,3 @@ q.join()
 
 worker.join()
 worker1.join()
- 
